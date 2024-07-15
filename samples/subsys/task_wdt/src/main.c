@@ -37,6 +37,10 @@
 #define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(nxp_kinetis_wdog32)
 #elif DT_HAS_COMPAT_STATUS_OKAY(microchip_xec_watchdog)
 #define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(microchip_xec_watchdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(realtek_rtl87x2g_aon_wdt)
+#define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(realtek_rtl87x2g_aon_wdt)
+#elif DT_HAS_COMPAT_STATUS_OKAY(realtek_rtl87x2g_core_wdt)
+#define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(realtek_rtl87x2g_core_wdt)
 #else
 #define WDT_NODE DT_INVALID_NODE
 #endif
