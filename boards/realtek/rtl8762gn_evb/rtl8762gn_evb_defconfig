@@ -1,0 +1,29 @@
+# Console Driver
+CONFIG_CONSOLE=y
+CONFIG_UART_CONSOLE=y
+
+# UART Driver
+CONFIG_SERIAL=y
+# CONFIG_UART_INTERRUPT_DRIVEN=y
+# CONFIG_UART_ASYNC_API=y
+
+# General Kernel Options
+CONFIG_TICKLESS_KERNEL=n
+CONFIG_TIMESLICE_SIZE=10
+CONFIG_INIT_STACKS=y
+# CONFIG_FPU=y
+CONFIG_XIP=y
+#place vector table and ISR code to RAM to avoid hardfault triggered by flash-suspend
+CONFIG_LINKER_USE_BOOT_SECTION=y
+
+# trustzone related
+CONFIG_TRUSTED_EXECUTION_NONSECURE=n
+CONFIG_ARM_SECURE_BUSFAULT_HARDFAULT_NMI=y
+
+# DISASSEMBLY
+CONFIG_OUTPUT_DISASSEMBLY=y
+
+# flashing
+# link application into the the flash partition selected by the zephyr,code-partition property in /chosen in devicetree
+
+

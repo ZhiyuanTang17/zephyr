@@ -1,0 +1,9 @@
+if SOC_RTL8762GN
+
+config SOC
+	default "rtl8762gn"
+
+config TRUSTED_EXECUTION_SECURE
+	default y
+
+endif # SOC_RTL8762GN

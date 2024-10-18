@@ -1,0 +1,18 @@
+if BOARD_RTL8762GN_EVB
+
+config BOARD
+	default "rtl8762gn_evb"
+
+config SERIAL
+	default y
+
+config UART_INTERRUPT_DRIVEN
+	default y
+
+config CONSOLE
+	default y
+
+config UART_CONSOLE
+	default CONSOLE
+
+endif #BOARD_RTL8762GN_EVB
