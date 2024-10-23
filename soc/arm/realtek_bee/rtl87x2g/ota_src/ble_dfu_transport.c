@@ -1464,9 +1464,10 @@ T_APP_RESULT ble_dfu_service_handle_cp_req(struct bt_conn *conn, uint16_t length
     if (opcode > DFU_OPCODE_MIN && opcode <= DFU_OPCODE_TEST_EN
         && ota_struct.ota_flag.is_ota_process)
     {
-        os_timer_create(&ota_struct.timer_handle_ota_transfer, "ota_dimage_transfer",
-                        TIMER_ID_DFU_IMAGE_TRANS, 30 * 1000, false, ble_dfu_timeout_cb);
-        os_timer_start(&ota_struct.timer_handle_ota_transfer);
+       // os_timer_create(&ota_struct.timer_handle_ota_transfer, "ota_dimage_transfer",
+          //              TIMER_ID_DFU_IMAGE_TRANS, 30 * 1000, false, ble_dfu_timeout_cb);
+        //printk("&ota_struct.timer_handle_ota_transfer:%x",&ota_struct.timer_handle_ota_transfer);
+        //os_timer_start(&ota_struct.timer_handle_ota_transfer);
     }
 
     switch (opcode)
@@ -1475,8 +1476,7 @@ T_APP_RESULT ble_dfu_service_handle_cp_req(struct bt_conn *conn, uint16_t length
         {
             if (length == DFU_LENGTH_CP_START_DFU)   /* 4 bytes is pending for encrypt */
             {
-                /* LOG_INF("===>ble_dfu_service_handle_cp_req: start dfu data %b", TRACE_BINARY(length,
-                                p_value)); */
+                LOG_HEXDUMP_INF(p_value, length, "===>ble_dfu_service_handle_cp_req: start dfu data:");
                 cause = APP_RESULT_SUCCESS;
                 results = ble_dfu_cp_start_dfu_handle(p);
                 
