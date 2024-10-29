@@ -27,3 +27,5 @@ zephyr_code_relocate(FILES ${ZEPHYR_BASE}/lib/os/rb.c LOCATION ITCM)
 endif()
 
 endif()
+
+add_subdirectory_ifdef(CONFIG_MBEDTLS crypto)
