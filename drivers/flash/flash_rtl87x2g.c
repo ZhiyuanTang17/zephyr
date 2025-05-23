@@ -136,9 +136,12 @@ static int flash_rtl87x2g_erase(const struct device *dev, off_t offset, size_t s
 
     for (int i = 0; i < size / FLASH_ERASE_BLK_SZ; i++)
     {
+        printk("asize:%d\n",size);
+        printk("start_addr + i * FLASH_ERASE_BLK_SZ:%x\n",start_addr + i * FLASH_ERASE_BLK_SZ);
         uint32_t key = arch_irq_lock();
         flash_nor_erase_locked(start_addr + i * FLASH_ERASE_BLK_SZ, FLASH_NOR_ERASE_SECTOR);
         arch_irq_unlock(key);
+        printk("bsize:%d\n",size);
     }
 
     return 0;

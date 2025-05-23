@@ -65,7 +65,11 @@
 		};
 		app_partition: partition@2d000 {
 			label = "app-image";
-			reg = <0x2D000 DT_SIZE_K(828)>;
+			reg = <0x2D000 DT_SIZE_K(800)>;
+		};
+		coredump_partition: partition@f5000 {
+			label = "coredump-partition";
+			reg = <0xF5000 DT_SIZE_K(4)>;
 		};
 		storage_partition: partition@fc000 {
 			label = "storage";
@@ -90,4 +94,13 @@
 
 &bee_bt_hci {
 	status= "okay";
+};
+
+/ {
+	/* To dump heap region.*/
+	coredump_device: coredump-device {
+		compatible = "zephyr,coredump";
+		coredump-type = "COREDUMP_TYPE_MEMCPY";
+		status = "okay";
+	};
 };

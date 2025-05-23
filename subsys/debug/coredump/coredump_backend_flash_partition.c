@@ -412,11 +412,15 @@ static void coredump_flash_backend_start(void)
 
 	ret = partition_open();
 
+	printk("reta:%d\n",ret);
+
 	if (ret == 0) {
 		/* Erase whole flash partition */
 		ret = flash_area_flatten(backend_ctx.flash_area, 0,
 					 backend_ctx.flash_area->fa_size);
 	}
+
+	printk("retb:%d\n",ret);
 
 	if (ret == 0) {
 		backend_ctx.checksum = 0;
@@ -431,12 +435,16 @@ static void coredump_flash_backend_start(void)
 		header_size = ROUND_UP(sizeof(struct flash_hdr_t), FLASH_WRITE_SIZE);
 		offset = backend_ctx.flash_area->fa_off + header_size;
 
+		printk("retc:%d\n",ret);
+
 		ret = stream_flash_init(&backend_ctx.stream_ctx, flash_dev,
 					stream_flash_buf,
 					sizeof(stream_flash_buf),
 					offset,
 					backend_ctx.flash_area->fa_size - header_size,
 					NULL);
+		
+		printk("retd:%d\n",ret);
 	}
 
 	if (ret != 0) {
