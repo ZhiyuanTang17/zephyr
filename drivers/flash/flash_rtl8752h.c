@@ -159,10 +159,10 @@ static const struct flash_driver_api flash_rtl8752h_driver_api = {
 	(mode) == FLASH_NOR_4_BIT_MODE ? "FLASH_NOR_4_BIT_MODE" : "Invalid mode")
 static int flash_rtl8752h_init(const struct device *dev)
 {
-	/* ToDo */
+	DBG_DIRECT("enter flash_rtl8752h_init!");
 	if (flash_nor_try_high_speed_mode(FLASH_NOR_IDX_SPIC0,
 		CONFIG_SOC_FLASH_RTL8752H_BIT_MODE) == FLASH_NOR_RET_SUCCESS) {
-		LOG_INF("Flash change to %s",
+		DBG_DIRECT("Flash change to %s",
 			GET_FLASH_BIT_MODE_STR(CONFIG_SOC_FLASH_RTL8752H_BIT_MODE)
 		);
 	}

@@ -226,11 +226,13 @@ void timeout_process_handler(struct k_work *item)
 {
 	/* Handle the timeouts that expired during lowpower */
 	sys_clock_announce_process_timeout();
+	DBG_DIRECT("test!");
 }
 
 void device_resume_handler(struct k_work *item)
 {
 	pm_resume_devices_rtk();
+	DBG_DIRECT("test!");
 }
 
 void pm_work_submit(void)
