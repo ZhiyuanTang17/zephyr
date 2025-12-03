@@ -1,0 +1,6 @@
+board:
+  name: rtl8752h_evb
+  vendor: realtek
+  socs:
+  - name: rtl8752htv
+  - name: rtl8752hkf

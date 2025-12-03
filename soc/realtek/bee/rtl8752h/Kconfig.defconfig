@@ -1,0 +1,39 @@
+# Copyright (c) 2024 Realtek Semiconductor Corp.
+# SPDX-License-Identifier: Apache-2.0
+if SOC_SERIES_RTL8752H
+
+# specifies the frequency of the hardware timer used for the system clock (in Hz)
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	int
+	default 32000
+
+config NUM_IRQS
+	int
+	default 32
+
+config CORTEX_M_SYSTICK
+	default y
+
+config SYS_CLOCK_TICKS_PER_SEC
+	int
+	default 100
+
+config TICKLESS_KERNEL
+	default n
+
+config TIMESLICE_SIZE
+	default 10
+
+config SYSTICK_USE_EXTERNAL_CLOCK
+	bool
+	default y
+
+config MULTI_HEAP
+	default y
+
+config STACK_SENTINEL
+	default y
+
+rsource "Kconfig.defconfig.rtl87*"
+
+endif # SOC_SERIES_RTL8752H
