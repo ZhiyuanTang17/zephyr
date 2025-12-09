@@ -5,10 +5,16 @@
  */
 
 #include <stdio.h>
+#include <moduleA.h>
+#include <moduleB.h>
+#include <moduleC.h>
+
 
 int main(void)
 {
 	printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
 
+	//A_func();
+	C_func();
 	return 0;
 }
