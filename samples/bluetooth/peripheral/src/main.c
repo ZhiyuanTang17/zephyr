@@ -238,14 +238,30 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 static struct bt_gatt_cb gatt_callbacks = {
 	.att_mtu_updated = mtu_updated
 };
-
+static struct bt_conn *current_conn = NULL;
 static void connected(struct bt_conn *conn, uint8_t err)
 {
 	if (err) {
 		printk("Connection failed (err 0x%02x)\n", err);
 	} else {
 		printk("Connected\n");
+		current_conn = bt_conn_ref(conn);  // 记录连接
+		// 发起参数更改
+		struct bt_le_conn_param *param = BT_LE_CONN_PARAM(0x320, 0x320, 0, 400); // 1s=800*1.25ms
+		int ret = bt_conn_le_param_update(conn, param);
+		if (ret) {
+			printk("bt_conn_le_param_update failed (err %d)\n", ret);
+		} else {
+			printk("Requested connection interval 1s\n");
+		}
 	}
+}
+
+static void conn_param_updated(struct bt_conn *conn, uint16_t interval,
+            uint16_t latency, uint16_t timeout)
+{
+    printk("Connection parameters updated: interval %u (%.2f ms), latency %u, timeout %u\n",
+        interval, interval * 1.25, latency, timeout);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -271,6 +287,7 @@ static void alert_high_start(void)
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
+    .le_param_updated = conn_param_updated,
 };
 
 BT_IAS_CB_DEFINE(ias_callbacks) = {
@@ -291,7 +308,7 @@ static void bt_ready(void)
 		settings_load();
 	}
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+	err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
 		return;
@@ -376,7 +393,7 @@ int main(void)
 	 * of starting delayed work so we do it here
 	 */
 	while (1) {
-		k_sleep(K_SECONDS(1));
+		k_thread_suspend(_current);
 
 		/* Current Time Service updates only when time is changed */
 		cts_notify();
