@@ -10,6 +10,14 @@
 #define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
 LOG_MODULE_DECLARE(soc);
 
+#ifdef WFI_WAKEUP_LATENCY_DEBUG
+extern uint64_t sys_clock_cycle_get_64(void);
+extern uint64_t g_wfi_exit_cyc;
+#define RECORD_WFI_EXIT_CYC() g_wfi_exit_cyc = sys_clock_cycle_get_64()
+#else
+#define RECORD_WFI_EXIT_CYC() do {} while (0)
+#endif
+
 /**
  * @brief Implement the preparation flow for system-wide power gating
  */
@@ -19,6 +27,7 @@ LOG_MODULE_DECLARE(soc);
 		CoreDebug->DEMCR &= ~CoreDebug_DEMCR_TRCENA_Msk;                        \
 		SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;                                      \
         __WFI();                                                                \
+        RECORD_WFI_EXIT_CYC();                                                  \
     } while(0)
 
 #define portPM_POWER_ON_SEQUENCE()                                              \

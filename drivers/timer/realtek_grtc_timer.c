@@ -75,9 +75,32 @@ void gtc_overflow_isr(void)
 	gtc_overflow_cnt++;
 	irq_unlock(key);
 }
-
+#ifdef WFI_WAKEUP_LATENCY_DEBUG
+uint64_t g_last_target_cyc;
+uint64_t g_wfi_exit_cyc;
+uint64_t g_sw_latency_cyc;
+uint64_t g_hw_latency_cyc;
+#endif
 void sys_timer_isr(void *arg)
 {
+#ifdef WFI_WAKEUP_LATENCY_DEBUG
+	uint64_t entry_cyc = get_gtc_counter_unlocked();
+	if (entry_cyc > g_last_target_cyc) {
+		uint64_t total_latency = entry_cyc - g_last_target_cyc;
+		if (g_wfi_exit_cyc > g_last_target_cyc && entry_cyc >= g_wfi_exit_cyc) {
+			g_sw_latency_cyc = entry_cyc - g_wfi_exit_cyc;
+			g_hw_latency_cyc = total_latency - g_sw_latency_cyc;
+		} else {
+			/* No WFI or invalid timestamp */
+			g_sw_latency_cyc = total_latency;
+			g_hw_latency_cyc = 0;
+		}
+	} else {
+		g_sw_latency_cyc = 0;
+		g_hw_latency_cyc = 0;
+	}
+	g_wfi_exit_cyc = 0; /* Reset for next iteration */
+#endif
 	GRTC_ClearINTPendingBit(SYS_TIMER_GRTC_INT);
 
 	uint32_t key = irq_lock();
@@ -123,7 +146,9 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 	}
 
 	GRTC_SetCompValue(SYS_TIMER_GRTC_CHANNEL, cyc + last_count);
-
+#ifdef WFI_WAKEUP_LATENCY_DEBUG
+	g_last_target_cyc = cyc + last_count;
+#endif
 #endif
 }
 
@@ -163,6 +188,7 @@ int sys_clock_driver_init(void)
 
 	IRQ_CONNECT(OVERFLOW_TIMER_IRQ, 6, gtc_overflow_isr, 0, 0);
 	irq_enable(OVERFLOW_TIMER_IRQ);
+	GRTC_ClearINTPendingBit(OVERFLOW_TIMER_GRTC_INT);
 
 	GRTC_SetCompValue(OVERFLOW_TIMER_GRTC_CHANNEL, 0xFFFFFFFF);
 	GRTC_CompReloadCmd(OVERFLOW_TIMER_GRTC_CHANNEL, DISABLE);
@@ -170,6 +196,7 @@ int sys_clock_driver_init(void)
 
 	IRQ_CONNECT(SYS_TIMER_IRQ, 0, sys_timer_isr, 0, 0);
 	irq_enable(SYS_TIMER_IRQ);
+	GRTC_ClearINTPendingBit(SYS_TIMER_GRTC_INT);
 
 	last_count = get_gtc_counter();
 
