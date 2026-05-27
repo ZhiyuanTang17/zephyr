@@ -17,6 +17,9 @@
 #include "system_rtl876x.h"
 #include "utils.h"
 #include "vector_table.h"
+#include "pingpong_buffer.h"
+#include "trace.h"
+#include "log_uart_dma.h"
 
 extern void _isr_wrapper(void);
 
@@ -44,6 +47,29 @@ static void rtl8752h_bt_controller_init(void)
 	}
 }
 #endif
+typedef void (*ISR_HANDLER)(const void *);
+
+static void restore_isr_registered_before_zephyr(void)
+{
+	VECTORn_Type vector_n = System_VECTORn;
+	IRQn_Type irqn;
+	ISR_HANDLER *RamVectorTable = (ISR_HANDLER *)RAM_VECTOR_ADDR;
+	ISR_HANDLER isr_handler;
+
+	for (; vector_n <= UART2_VECTORn; ++vector_n) {
+		isr_handler = RamVectorTable[(uint32_t)vector_n];
+		if (RamVectorTable[(uint32_t)vector_n] != (ISR_HANDLER)ROM_Default_Handler) {
+			irqn = vector_n - 16;
+			if (irq_is_enabled(irqn)) {
+				irq_disable(irqn);
+				z_isr_install(irqn, isr_handler, NULL);
+				irq_enable(irqn);
+			} else {
+				z_isr_install(irqn, isr_handler, NULL);
+			}
+		}
+	}
+}
 
 /*
  * Sync ROM-initialized ISRs with Zephyr by wrapping them via z_isr_install.
@@ -96,6 +122,8 @@ void soc_early_reset_hook(void)
 
 void soc_early_init_hook(void)
 {
+	restore_isr_registered_before_zephyr();
+
 	/* [Phase 1] Vector Table Relocation:
 	 * Point VTOR to RAM to allow ROM code to update vectors safely.
 	 */
@@ -106,6 +134,16 @@ void soc_early_init_hook(void)
 
 	/* Initialize OS interface patches. */
 	os_zephyr_patch_init();
+
+	/* Config log module and level, init pointer trace_mask */
+	log_module_trace_init(NULL);
+	/* PingPong Buffer Init */
+	PPB_Init(pMCU_PPB);
+	/* Init Log UART channel */
+	extern void LOGUARTDriverInit(void);
+	LOGUARTDriverInit();
+	/* Init Log Uart DMA */
+	LogUartDMAInit();
 
 	/* Initialize cpu clock source and apply calibrations. */
 	set_active_mode_clk_src();
