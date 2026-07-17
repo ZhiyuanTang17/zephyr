@@ -338,6 +338,25 @@ void sys_clock_unlock(k_spinlock_key_t key)
 }
 #endif
 
+#if defined(CONFIG_TEST) || defined(CONFIG_ASSERT)
+bool sys_clock_is_locked(void)
+{
+#if defined(CONFIG_SMP)
+	return z_spin_is_locked(&timeout_lock);
+#else
+	/* On UP, the system clock lock reduces to arch_irq_lock().
+	 * "Locked" means interrupts are currently disabled. Sample
+	 * the current state and restore it immediately.
+	 */
+	unsigned int key = arch_irq_lock();
+	bool locked = !arch_irq_unlocked(key);
+
+	arch_irq_unlock(key);
+	return locked;
+#endif
+}
+#endif
+
 int64_t sys_clock_tick_get(void)
 {
 	uint64_t t = 0U;
