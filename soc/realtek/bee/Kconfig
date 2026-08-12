@@ -16,4 +16,16 @@ config SOC_FAMILY_REALTEK_BEE_IMAGE_HEADER
 	help
 	  This config will prepend bee_image_header on the zephyr binary.
 
+
+config CRYPTO_BEE_PSA_ACCELERATOR
+	bool "Accelerate PSA AES operations using Realtek Bee hardware"
+	depends on MBEDTLS && TF_PSA_CRYPTO_BUILTIN
+	default y
+	select PSA_WANT_KEY_TYPE_AES
+	select PSA_WANT_ALG_ECB_NO_PADDING
+	help
+	  Route PSA AES-ECB operations to the Realtek Bee hardware engine. This
+	  also accelerates composite PSA algorithms such as CCM, whose CBC-MAC
+	  and counter mode are built from AES-ECB block encryption.
+
 endif # SOC_FAMILY_REALTEK_BEE
