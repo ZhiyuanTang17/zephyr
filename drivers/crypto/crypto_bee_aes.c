@@ -267,24 +267,10 @@ static int bee_aes_ofb_crypt(const struct bee_aes_sessn_state *s, const uint8_t 
 	return 0;
 }
 
-static int bee_aes_ctr_crypt(const struct bee_aes_sessn_state *s, const uint8_t *in, uint8_t *out,
-			     size_t len, const uint8_t *iv, uint32_t ctr_len_bits)
+static int bee_aes_ctr_crypt_counter(const struct bee_aes_sessn_state *s, const uint8_t *in,
+				     uint8_t *out, size_t len, uint8_t *counter, size_t ctr_offset)
 {
-	size_t ctr_bytes;
-	size_t iv_bytes;
-	uint8_t counter[BEE_AES_BLOCK_SIZE];
 	int ret;
-
-	if (ctr_len_bits == 0U || (ctr_len_bits % 8U) != 0U || ctr_len_bits > 128U) {
-		LOG_ERR("CTR: invalid counter length %u bits", ctr_len_bits);
-		return -EINVAL;
-	}
-
-	ctr_bytes = ctr_len_bits / 8U;
-	iv_bytes = BEE_AES_BLOCK_SIZE - ctr_bytes;
-
-	memset(counter, 0, sizeof(counter));
-	memcpy(counter, iv, iv_bytes);
 
 	while (len > 0U) {
 		uint8_t stream[BEE_AES_BLOCK_SIZE];
@@ -304,13 +290,275 @@ static int bee_aes_ctr_crypt(const struct bee_aes_sessn_state *s, const uint8_t 
 			out[i] = in[i] ^ stream[i];
 		}
 
-		bee_aes_ctr_inc(counter, iv_bytes);
+		bee_aes_ctr_inc(counter, ctr_offset);
 		in += chunk;
 		out += chunk;
 		len -= chunk;
 	}
 
 	return 0;
+}
+
+static int bee_aes_ctr_crypt(const struct bee_aes_sessn_state *s, const uint8_t *in, uint8_t *out,
+			     size_t len, const uint8_t *iv, uint32_t ctr_len_bits)
+{
+	size_t ctr_bytes;
+	size_t iv_bytes;
+	uint8_t counter[BEE_AES_BLOCK_SIZE];
+
+	if (ctr_len_bits == 0U || (ctr_len_bits % 8U) != 0U || ctr_len_bits > 128U) {
+		LOG_ERR("CTR: invalid counter length %u bits", ctr_len_bits);
+		return -EINVAL;
+	}
+
+	ctr_bytes = ctr_len_bits / 8U;
+	iv_bytes = BEE_AES_BLOCK_SIZE - ctr_bytes;
+
+	memset(counter, 0, sizeof(counter));
+	memcpy(counter, iv, iv_bytes);
+
+	return bee_aes_ctr_crypt_counter(s, in, out, len, counter, iv_bytes);
+}
+
+static int bee_aes_ccm_mac_block(const struct bee_aes_sessn_state *s,
+				 const uint8_t block[BEE_AES_BLOCK_SIZE],
+				 uint8_t mac[BEE_AES_BLOCK_SIZE])
+{
+	uint8_t input[BEE_AES_BLOCK_SIZE];
+
+	for (size_t i = 0; i < BEE_AES_BLOCK_SIZE; i++) {
+		input[i] = mac[i] ^ block[i];
+	}
+
+	return bee_aes_hw_block(s, AES_MODE_ECB, input, mac, NULL, false);
+}
+
+static int bee_aes_ccm_mac_data(const struct bee_aes_sessn_state *s, const uint8_t *data,
+				size_t len, uint8_t mac[BEE_AES_BLOCK_SIZE])
+{
+	while (len > 0U) {
+		uint8_t block[BEE_AES_BLOCK_SIZE] = {0};
+		size_t chunk = MIN(len, BEE_AES_BLOCK_SIZE);
+		int ret;
+
+		memcpy(block, data, chunk);
+		ret = bee_aes_ccm_mac_block(s, block, mac);
+		if (ret != 0) {
+			return ret;
+		}
+
+		data += chunk;
+		len -= chunk;
+	}
+
+	return 0;
+}
+
+static int bee_aes_ccm_mac_aad(const struct bee_aes_sessn_state *s, const uint8_t *aad,
+			       uint32_t aad_len, uint8_t mac[BEE_AES_BLOCK_SIZE])
+{
+	uint8_t block[BEE_AES_BLOCK_SIZE] = {0};
+	size_t block_used;
+	uint32_t remaining = aad_len;
+	int ret;
+
+	if (aad_len == 0U) {
+		return 0;
+	}
+
+	block[0] = (uint8_t)(aad_len >> 8);
+	block[1] = (uint8_t)aad_len;
+	block_used = 2U;
+
+	while (remaining > 0U) {
+		size_t chunk = MIN((size_t)remaining, BEE_AES_BLOCK_SIZE - block_used);
+
+		memcpy(&block[block_used], aad, chunk);
+		block_used += chunk;
+		aad += chunk;
+		remaining -= chunk;
+
+		if (block_used == BEE_AES_BLOCK_SIZE) {
+			ret = bee_aes_ccm_mac_block(s, block, mac);
+			if (ret != 0) {
+				return ret;
+			}
+
+			memset(block, 0, sizeof(block));
+			block_used = 0U;
+		}
+	}
+
+	if (block_used != 0U) {
+		return bee_aes_ccm_mac_block(s, block, mac);
+	}
+
+	return 0;
+}
+
+static void bee_aes_ccm_format_counter(uint8_t counter[BEE_AES_BLOCK_SIZE], const uint8_t *nonce,
+				       size_t nonce_len, uint8_t length_size, uint64_t value)
+{
+	memset(counter, 0, BEE_AES_BLOCK_SIZE);
+	counter[0] = length_size - 1U;
+	memcpy(&counter[1], nonce, nonce_len);
+
+	for (size_t i = 0; i < length_size; i++) {
+		counter[BEE_AES_BLOCK_SIZE - 1U - i] = (uint8_t)value;
+		value >>= 8;
+	}
+}
+
+static bool bee_aes_ccm_tag_equal(const uint8_t *left, const uint8_t *right, size_t len)
+{
+	uint8_t diff = 0U;
+
+	for (size_t i = 0; i < len; i++) {
+		diff |= left[i] ^ right[i];
+	}
+
+	return diff == 0U;
+}
+
+static int bee_aes_ccm_check_params(struct cipher_ctx *ctx, struct cipher_aead_pkt *aead_pkt,
+				    uint8_t *nonce)
+{
+	struct cipher_pkt *pkt;
+	uint16_t nonce_len = ctx->mode_params.ccm_info.nonce_len;
+	uint16_t tag_len = ctx->mode_params.ccm_info.tag_len;
+	uint8_t length_size;
+	uint64_t msg_len;
+
+	if (!ctx->drv_sessn_state || !aead_pkt || !aead_pkt->pkt || !nonce || !aead_pkt->tag) {
+		return -EINVAL;
+	}
+
+	pkt = aead_pkt->pkt;
+	if (pkt->in_len < 0 || pkt->out_buf_max < pkt->in_len || !pkt->out_buf ||
+	    (pkt->in_len > 0 && !pkt->in_buf) || (aead_pkt->ad_len > 0U && !aead_pkt->ad)) {
+		return -EINVAL;
+	}
+
+	if (nonce_len < 7U || nonce_len > 13U) {
+		LOG_ERR("CCM: nonce length must be from 7 to 13 bytes");
+		return -EINVAL;
+	}
+
+	if (tag_len < 4U || tag_len > BEE_AES_BLOCK_SIZE || (tag_len & 1U) != 0U) {
+		LOG_ERR("CCM: tag length must be an even value from 4 to 16 bytes");
+		return -EINVAL;
+	}
+
+	if (aead_pkt->ad_len >= 0xff00U) {
+		LOG_ERR("CCM: associated data length must be less than 65280 bytes");
+		return -ENOTSUP;
+	}
+
+	length_size = BEE_AES_BLOCK_SIZE - 1U - nonce_len;
+	msg_len = (uint64_t)pkt->in_len;
+	if (length_size < sizeof(msg_len) && msg_len >= (UINT64_C(1) << (8U * length_size))) {
+		LOG_ERR("CCM: message is too long for the selected nonce length");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int bee_aes_ccm_op(struct cipher_ctx *ctx, struct cipher_aead_pkt *aead_pkt, uint8_t *nonce)
+{
+	struct bee_aes_sessn_state *s = ctx->drv_sessn_state;
+	struct cipher_pkt *pkt;
+	uint8_t b0[BEE_AES_BLOCK_SIZE] = {0};
+	uint8_t counter[BEE_AES_BLOCK_SIZE];
+	uint8_t mac[BEE_AES_BLOCK_SIZE] = {0};
+	uint8_t tag[BEE_AES_BLOCK_SIZE];
+	uint16_t nonce_len;
+	uint16_t tag_len;
+	uint8_t length_size;
+	uint64_t msg_len;
+	const uint8_t *mac_data;
+	int ret;
+
+	ret = bee_aes_ccm_check_params(ctx, aead_pkt, nonce);
+	if (ret != 0) {
+		return ret;
+	}
+
+	pkt = aead_pkt->pkt;
+	nonce_len = ctx->mode_params.ccm_info.nonce_len;
+	tag_len = ctx->mode_params.ccm_info.tag_len;
+	length_size = BEE_AES_BLOCK_SIZE - 1U - nonce_len;
+	msg_len = (uint64_t)pkt->in_len;
+
+	b0[0] = (aead_pkt->ad_len > 0U ? BIT(6) : 0U) | (((tag_len - 2U) / 2U) << 3) |
+		(length_size - 1U);
+	memcpy(&b0[1], nonce, nonce_len);
+	for (size_t i = 0; i < length_size; i++) {
+		b0[BEE_AES_BLOCK_SIZE - 1U - i] = (uint8_t)msg_len;
+		msg_len >>= 8;
+	}
+
+	k_mutex_lock(&bee_aes_lock, K_FOREVER);
+
+	if (s->op == CRYPTO_CIPHER_OP_DECRYPT) {
+		bee_aes_ccm_format_counter(counter, nonce, nonce_len, length_size, 1U);
+		ret = bee_aes_ctr_crypt_counter(s, pkt->in_buf, pkt->out_buf, pkt->in_len, counter,
+						1U + nonce_len);
+		if (ret != 0) {
+			goto out;
+		}
+		mac_data = pkt->out_buf;
+	} else {
+		mac_data = pkt->in_buf;
+	}
+
+	ret = bee_aes_ccm_mac_block(s, b0, mac);
+	if (ret != 0) {
+		goto out;
+	}
+
+	ret = bee_aes_ccm_mac_aad(s, aead_pkt->ad, aead_pkt->ad_len, mac);
+	if (ret != 0) {
+		goto out;
+	}
+
+	ret = bee_aes_ccm_mac_data(s, mac_data, pkt->in_len, mac);
+	if (ret != 0) {
+		goto out;
+	}
+
+	bee_aes_ccm_format_counter(counter, nonce, nonce_len, length_size, 0U);
+	ret = bee_aes_ctr_crypt_counter(s, mac, tag, tag_len, counter, 1U + nonce_len);
+	if (ret != 0) {
+		goto out;
+	}
+
+	if (s->op == CRYPTO_CIPHER_OP_DECRYPT) {
+		if (!bee_aes_ccm_tag_equal(tag, aead_pkt->tag, tag_len)) {
+			LOG_ERR("CCM: authentication tag mismatch");
+			ret = -EBADMSG;
+			goto out;
+		}
+	} else {
+		memcpy(aead_pkt->tag, tag, tag_len);
+		bee_aes_ccm_format_counter(counter, nonce, nonce_len, length_size, 1U);
+		ret = bee_aes_ctr_crypt_counter(s, pkt->in_buf, pkt->out_buf, pkt->in_len, counter,
+						1U + nonce_len);
+	}
+
+out:
+	if (ret != 0 && s->op == CRYPTO_CIPHER_OP_DECRYPT && pkt->out_buf) {
+		memset(pkt->out_buf, 0, pkt->in_len);
+	}
+	k_mutex_unlock(&bee_aes_lock);
+
+	if (ret == 0) {
+		pkt->out_len = pkt->in_len;
+	} else {
+		pkt->out_len = 0;
+	}
+
+	return ret;
 }
 
 static int bee_aes_ecb_op(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
@@ -468,13 +716,26 @@ static int bee_aes_begin_session(const struct device *dev, struct cipher_ctx *ct
 
 	if (mode != CRYPTO_CIPHER_MODE_ECB && mode != CRYPTO_CIPHER_MODE_CBC &&
 	    mode != CRYPTO_CIPHER_MODE_CFB && mode != CRYPTO_CIPHER_MODE_OFB &&
-	    mode != CRYPTO_CIPHER_MODE_CTR) {
+	    mode != CRYPTO_CIPHER_MODE_CTR && mode != CRYPTO_CIPHER_MODE_CCM) {
 		LOG_ERR("Unsupported mode %d", mode);
 		return -ENOTSUP;
 	}
 
 	if (ctx->keylen != 16U && ctx->keylen != 32U) {
 		LOG_ERR("Unsupported key length %zu (must be 16 or 32)", ctx->keylen);
+		return -EINVAL;
+	}
+
+	if (!ctx->key.bit_stream) {
+		return -EINVAL;
+	}
+
+	if (mode == CRYPTO_CIPHER_MODE_CCM &&
+	    (ctx->mode_params.ccm_info.nonce_len < 7U ||
+	     ctx->mode_params.ccm_info.nonce_len > 13U || ctx->mode_params.ccm_info.tag_len < 4U ||
+	     ctx->mode_params.ccm_info.tag_len > BEE_AES_BLOCK_SIZE ||
+	     (ctx->mode_params.ccm_info.tag_len & 1U) != 0U)) {
+		LOG_ERR("Invalid CCM session parameters");
 		return -EINVAL;
 	}
 
@@ -506,6 +767,9 @@ static int bee_aes_begin_session(const struct device *dev, struct cipher_ctx *ct
 		break;
 	case CRYPTO_CIPHER_MODE_CTR:
 		ctx->ops.ctr_crypt_hndlr = bee_aes_ctr_op;
+		break;
+	case CRYPTO_CIPHER_MODE_CCM:
+		ctx->ops.ccm_crypt_hndlr = bee_aes_ccm_op;
 		break;
 	default:
 		bee_aes_sessn_free(s);

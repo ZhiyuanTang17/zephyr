@@ -8,7 +8,7 @@ config CRYPTO_BEE_AES
 	help
 	  Enable the AES hardware accelerator driver for Realtek Bee family
 	  SoCs (RTL8752H, RTL87x2G). Supports AES-128 and AES-256 in ECB,
-	  CBC, and CTR modes.
+	  CBC, CFB, OFB, CTR, and CCM modes.
 
 if CRYPTO_BEE_AES
 
