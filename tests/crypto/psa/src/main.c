@@ -274,4 +274,59 @@ ZTEST_USER(psa_crypto_test_suite, test_aes_ccm)
 	zassert_equal(status, PSA_SUCCESS);
 }
 
+ZTEST_USER(psa_crypto_test_suite, test_ecc_ecdsa)
+{
+	static const uint8_t hash[PSA_HASH_LENGTH(PSA_ALG_SHA_256)] = {
+		0x2c, 0xf2, 0x4d, 0xba, 0x5f, 0xb0, 0xa3, 0x0e,
+		0x26, 0xe8, 0x3b, 0x2a, 0xc5, 0xb9, 0xe2, 0x9e,
+		0x1b, 0x16, 0x1e, 0x5c, 0x1f, 0xa7, 0x42, 0x5e,
+		0x73, 0x04, 0x33, 0x62, 0x93, 0x8b, 0x98, 0x24
+	};
+	psa_key_attributes_t key_attr = PSA_KEY_ATTRIBUTES_INIT;
+	psa_algorithm_t algorithm = PSA_ALG_ECDSA(PSA_ALG_SHA_256);
+	psa_key_id_t key_id = PSA_KEY_ID_NULL;
+	uint8_t signature[PSA_SIGN_OUTPUT_SIZE(
+		PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1), 256, algorithm)];
+	timing_t start;
+	timing_t end;
+	uint64_t cycles;
+	uint64_t nanoseconds;
+	size_t signature_length;
+	psa_status_t status;
+
+	psa_set_key_type(&key_attr,
+			 PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+	psa_set_key_bits(&key_attr, 256);
+	psa_set_key_usage_flags(&key_attr, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH);
+	psa_set_key_algorithm(&key_attr, algorithm);
+
+	status = psa_generate_key(&key_attr, &key_id);
+	zassert_equal(status, PSA_SUCCESS, "Unable to generate P-256 key (%d)", status);
+
+	timing_init();
+	timing_start();
+	start = timing_counter_get();
+	status = psa_sign_hash(key_id, algorithm, hash, sizeof(hash), signature,
+			       sizeof(signature), &signature_length);
+	end = timing_counter_get();
+	cycles = timing_cycles_get(&start, &end);
+	nanoseconds = timing_cycles_to_ns(cycles);
+	TC_PRINT("P-256 ECDSA sign time: %llu ns (%llu cycles)\n",
+		 (unsigned long long)nanoseconds, (unsigned long long)cycles);
+	zassert_equal(status, PSA_SUCCESS, "ECDSA signing failed (%d)", status);
+
+	start = timing_counter_get();
+	status = psa_verify_hash(key_id, algorithm, hash, sizeof(hash), signature,
+				 signature_length);
+	end = timing_counter_get();
+	cycles = timing_cycles_get(&start, &end);
+	nanoseconds = timing_cycles_to_ns(cycles);
+	TC_PRINT("P-256 ECDSA verify time: %llu ns (%llu cycles)\n",
+		 (unsigned long long)nanoseconds, (unsigned long long)cycles);
+	zassert_equal(status, PSA_SUCCESS, "ECDSA verification failed (%d)", status);
+
+	status = psa_destroy_key(key_id);
+	zassert_equal(status, PSA_SUCCESS);
+}
+
 ZTEST_SUITE(psa_crypto_test_suite, NULL, NULL, NULL, NULL, NULL);
