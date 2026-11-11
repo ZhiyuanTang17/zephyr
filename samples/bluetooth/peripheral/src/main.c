@@ -213,7 +213,33 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		printk("Connection failed, err 0x%02x %s\n", err, bt_hci_err_to_str(err));
 	} else {
 		printk("Connected\n");
+
+		/* Connection interval 100 ms (80 * 1.25 ms), timeout 4 s */
+
+		// err = bt_conn_le_param_update(conn, BT_LE_CONN_PARAM(
+		// 				      BT_GAP_MS_TO_CONN_INTERVAL(100),
+		// 				      BT_GAP_MS_TO_CONN_INTERVAL(100), 0,
+		// 				      BT_GAP_MS_TO_CONN_TIMEOUT(4000)));
+
+
+		/* Connection interval 1 s (800 * 1.25 ms), timeout 4 s */
+		err = bt_conn_le_param_update(conn, BT_LE_CONN_PARAM(
+						      BT_GAP_MS_TO_CONN_INTERVAL(1000),
+						      BT_GAP_MS_TO_CONN_INTERVAL(1000), 0,
+						      BT_GAP_MS_TO_CONN_TIMEOUT(4000)));
+		if (err) {
+			printk("Connection param update failed (err %d)\n", err);
+		} else {
+			printk("Requested connection interval 100 ms\n");
+		}
 	}
+}
+
+static void conn_param_updated(struct bt_conn *conn, uint16_t interval,
+			       uint16_t latency, uint16_t timeout)
+{
+	printk("Connection parameters updated: interval %u (%u us), latency %u, timeout %u\n",
+	       interval, interval * 1250U, latency, timeout);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -239,6 +265,7 @@ static void alert_high_start(void)
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
+	.le_param_updated = conn_param_updated,
 };
 
 BT_IAS_CB_DEFINE(ias_callbacks) = {
@@ -257,7 +284,10 @@ static void bt_ready(void)
 		settings_load();
 	}
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+	err = bt_le_adv_start(BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONN,
+					      BT_GAP_MS_TO_ADV_INTERVAL(1000),
+					      BT_GAP_MS_TO_ADV_INTERVAL(1000), NULL),
+			      ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
 		return;
@@ -426,7 +456,7 @@ int main(void)
 	 * of starting delayed work so we do it here
 	 */
 	while (1) {
-		k_sleep(K_SECONDS(1));
+		k_thread_suspend(_current);
 
 		/* Current time update notification example
 		 * For testing purposes, we send a manual update notification every second.
